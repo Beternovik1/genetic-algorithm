@@ -1,3 +1,8 @@
+# C++ object files and binaries
+*.o
+ag_circulos
+*.out
+
 # Python
 __pycache__/
 *.py[cod]
@@ -51,3 +56,4 @@ CONVENTIONS.md
 ISSUES.md
 MASTER_PROMPT.md
 diagram.txt
+REPARTICION.txt
