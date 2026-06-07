@@ -1,5 +1,6 @@
 /* sga.hpp
    Archivo de Cabecera del Algoritmo Genético Simple
+   Modificado para detección de círculos en imágenes BMP
  */
 #ifndef SGA_HPP
 #define SGA_HPP
@@ -21,6 +22,13 @@ typedef struct {
     unsigned int Padre1;
     unsigned int Padre2;    
 } INDIVIDUO;
+
+/* Estructura para almacenar coordenadas de píxeles negros */
+typedef struct {
+    int *x;
+    int *y;
+    int count;
+} PIXELES_NEGROS;
 
 class GA {
 private:
@@ -50,11 +58,21 @@ private:
     unsigned int        tournament_size;
     int                 tipo_cruza;
     
-    // Controles añadidos
+    /* Controles añadidos */
     OPT_TYPE            opt_dir;
-    int                 metodo_seleccion; // 1 = Ruleta, 2 = Torneo
+    int                 metodo_seleccion; /* 1 = Ruleta, 2 = Torneo */
+    bool                elitismo;
+
+    /* Datos para detección de círculos (tipo_funcion = 5) */
+    int                *pixel_x;
+    int                *pixel_y;
+    int                 cant_pixeles_negros;
+    float              *imagen_plana;
+    int                 ancho_img;
+    int                 alto_img;
 
     void AllocIndividuo(INDIVIDUO &ind);
+    int funcion_objetivo_circulo(int cx, int cy, int r);
 
 public:
     GA(unsigned int T_Pob,
@@ -81,6 +99,7 @@ public:
     
     float GetBestObj(void) const { return POB[Id_BestObj].VObj; }
     unsigned int GetBestObj_Index(void) const { return Id_BestObj; }
+    void GetBestCirculo(float *cx, float *cy, float *r) const;
     
     void setTipoFuncion(int f) { tipo_funcion = f; }
     void setDataSet(const float* x, const float* y, int n);
@@ -88,6 +107,9 @@ public:
     void setMetodoSeleccion(int met) { metodo_seleccion = met; }
     void setTournamentSize(unsigned int size) { tournament_size = size; }
     void setTipoCruza(int c) { tipo_cruza = c; }
+    void setElitismo(bool val) { elitismo = val; }
+    void setPixelNegros(int *x, int *y, int count,
+                        float *img_data, int ancho, int alto);
 };
 
 #endif /* SGA_HPP */

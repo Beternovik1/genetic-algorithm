@@ -1,8 +1,31 @@
 /* sga.cpp
    Implementación del Algoritmo Genético Simple
+   Modificado para detección de círculos en imágenes BMP
  */
 
 #include "sga.hpp"
+#define PI 3.14159265358979323846f
+
+/* Función auxiliar para calcular el círculo que pasa por 3 puntos */
+static int _calcular_circulo_3puntos(int x1, int y1, int x2, int y2,
+                                     int x3, int y3, float *cx, float *cy, float *r)
+{
+    float a = (float)(x1 - x2);
+    float b = (float)(y1 - y2);
+    float c = (float)(x1 - x3);
+    float d = (float)(y1 - y3);
+    float e = (float)((x1*x1 - x2*x2) + (y1*y1 - y2*y2)) / 2.0f;
+    float f = (float)((x1*x1 - x3*x3) + (y1*y1 - y3*y3)) / 2.0f;
+    float det = a * d - b * c;
+
+    if (fabs(det) < 1e-6f)
+        return 0; /* Puntos colineales */
+
+    *cx = (d * e - b * f) / det;
+    *cy = (-c * e + a * f) / det;
+    *r  = sqrtf((x1 - *cx) * (x1 - *cx) + (y1 - *cy) * (y1 - *cy));
+    return 1;
+}
 
 void GA::AllocIndividuo(INDIVIDUO &ind) {
     ind.Chrom = new BYTE[ChromeSize];
@@ -34,6 +57,13 @@ GA::GA(unsigned int T_Pob,
     metodo_seleccion = 1;
     tournament_size = 2;
     tipo_cruza = 1;
+    elitismo   = true;
+    pixel_x     = NULL;
+    pixel_y     = NULL;
+    cant_pixeles_negros = 0;
+    imagen_plana = NULL;
+    ancho_img   = 0;
+    alto_img    = 0;
 
     for (unsigned int k = 0; k < NumGens; k++)
         ChromeSize += BitxGen[k];
@@ -236,7 +266,7 @@ void GA::Evolucionar(unsigned int NumGeneraciones) {
         
         Cruza(); Mutacion();
 
-        if (eliteValido)
+        if (elitismo && eliteValido)
             for (unsigned int i = 0; i < ChromeSize; i++)
                 POB[0].Chrom[i] = EliteChrom[i];
     }
@@ -289,6 +319,37 @@ float GA::FuncionObjetivo(unsigned int Id) {
             float diff = POB[Id].Vre[i] - centros[i];
             obj -= (diff * diff);
         }
+    }
+    else if (tipo_funcion == 5) {
+        /* Detección de círculos en imágenes BMP
+           Vre[0] = I (índice al primer  píxel negro)
+           Vre[1] = J (índice al segundo píxel negro)
+           Vre[2] = K (índice al tercer  píxel negro)
+         */
+        int i_idx = (int)POB[Id].Vre[0];
+        int j_idx = (int)POB[Id].Vre[1];
+        int k_idx = (int)POB[Id].Vre[2];
+
+        /* Validar que los índices estén dentro del rango */
+        if (i_idx < 0 || i_idx >= cant_pixeles_negros ||
+            j_idx < 0 || j_idx >= cant_pixeles_negros ||
+            k_idx < 0 || k_idx >= cant_pixeles_negros) {
+            return 0.0f;
+        }
+
+        /* Obtener coordenadas de los 3 puntos */
+        int x1 = pixel_x[i_idx], y1 = pixel_y[i_idx];
+        int x2 = pixel_x[j_idx], y2 = pixel_y[j_idx];
+        int x3 = pixel_x[k_idx], y3 = pixel_y[k_idx];
+
+        /* Calcular el círculo que pasa por los 3 puntos */
+        float cx, cy, r;
+        if (!_calcular_circulo_3puntos(x1, y1, x2, y2, x3, y3, &cx, &cy, &r)) {
+            return 0.0f; /* Puntos colineales */
+        }
+
+        /* Evaluar cuántos píxeles de la circunferencia son negros */
+        obj = (float)funcion_objetivo_circulo((int)cx, (int)cy, (int)r);
     }
     return obj;
 }
@@ -360,4 +421,51 @@ void GA::ImprimePob(void) {
 
 void GA::setDataSet(const float* x, const float* y, int n) {
     X_data = x; Y_data = y; num_puntos = n;
+}
+
+void GA::setPixelNegros(int *x, int *y, int count,
+                         float *img_data, int ancho, int alto)
+{
+    pixel_x = x;
+    pixel_y = y;
+    cant_pixeles_negros = count;
+    imagen_plana = img_data;
+    ancho_img = ancho;
+    alto_img  = alto;
+}
+
+int GA::funcion_objetivo_circulo(int cx, int cy, int r)
+{
+    int aciertos = 0;
+    for (int angulo = 0; angulo < 360; angulo++) {
+        float rad = (float)angulo * PI / 180.0f;
+        int px = (int)((float)cx + (float)r * cosf(rad));
+        int py = (int)((float)cy + (float)r * sinf(rad));
+
+        if (px >= 0 && px < ancho_img && py >= 0 && py < alto_img) {
+            if (imagen_plana[py * ancho_img + px] == 0.0f)
+                aciertos++;
+        }
+    }
+    return aciertos;
+}
+
+void GA::GetBestCirculo(float *cx, float *cy, float *r) const {
+    unsigned int idx = Id_BestObj;
+    int i_idx = (int)POB[idx].Vre[0];
+    int j_idx = (int)POB[idx].Vre[1];
+    int k_idx = (int)POB[idx].Vre[2];
+
+    if (i_idx < 0 || i_idx >= cant_pixeles_negros ||
+        j_idx < 0 || j_idx >= cant_pixeles_negros ||
+        k_idx < 0 || k_idx >= cant_pixeles_negros) {
+        *cx = *cy = *r = 0.0f;
+        return;
+    }
+
+    int x1 = pixel_x[i_idx], y1 = pixel_y[i_idx];
+    int x2 = pixel_x[j_idx], y2 = pixel_y[j_idx];
+    int x3 = pixel_x[k_idx], y3 = pixel_y[k_idx];
+
+    _calcular_circulo_3puntos(x1, y1, x2, y2, x3, y3, cx, cy, r);
 }
