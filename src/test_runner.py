@@ -10,74 +10,77 @@ def ejecutar_tarea(args):
     comando = ["./ga_detector", imagen, str(pob), str(gens), str(pc), str(pm), str(sel), str(cruza)]
     
     proceso = subprocess.run(comando, capture_output=True, text=True)
-    salida_limpia = proceso.stdout.strip().split('\n')[-1]
+    lineas = proceso.stdout.strip().split('\n')
     
-    try:
-        cx, cy, r, fit = map(float, salida_limpia.split(','))
-        return [imagen, cx, cy, r, fit]
-    except ValueError:
-        return None # Falla silenciosa en caso de error de parseo
+    resultados_crudos = []
+    estadisticas = None
+    
+    for linea in lineas:
+        if linea.startswith("STATS"):
+            # Capturamos las estadísticas descriptivas calculadas en C++
+            _, cx_avg, cx_sd, cy_avg, cy_sd, r_avg, r_sd, fit_avg, fit_sd = linea.split(',')
+            estadisticas = [float(x) for x in (cx_avg, cx_sd, cy_avg, cy_sd, r_avg, r_sd, fit_avg, fit_sd)]
+        else:
+            try:
+                cx, cy, r, fit = map(float, linea.split(','))
+                resultados_crudos.append([imagen, cx, cy, r, fit])
+            except ValueError:
+                continue
+                
+    return imagen, resultados_crudos, estadisticas
 
-def generar_reporte_paralelo(imagenes, repeticiones=100):
+def generar_reporte_paralelo(imagenes):
     todas_ejecuciones = []
+    resultados_agregados = {}
     
-    # Configuración estática para la prueba masiva (debe venir del tuning)
-    pob, gens, pc, pm, sel, cruza = 100, 500, 0.9, 0.05, 2, 1
+    pob, gens, pc, pm, sel, cruza = 100, 500, 0.90, 0.05, 2, 1
     
-    # 1. Preparar la lista total de tareas (7 imágenes * 100 repeticiones = 700 tareas)
-    tareas = []
-    for img in imagenes:
-        for _ in range(repeticiones):
-            tareas.append((img, pob, gens, pc, pm, sel, cruza))
-            
-    print(f"Iniciando {len(tareas)} ejecuciones en paralelo...")
+    # 1 tarea por imagen (C++ hará las 100 iteraciones internamente)
+    tareas = [(img, pob, gens, pc, pm, sel, cruza) for img in imagenes]
+        
+    print(f"Iniciando ejecución en paralelo para {len(tareas)} imágenes...")
     
-    # 2. Ejecutar tareas distribuyéndolas en todos los núcleos disponibles
-    # 2. Ejecutar tareas distribuyéndolas en todos los núcleos y rastrear progreso
-    resultados_validos = []
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futuros = {executor.submit(ejecutar_tarea, tarea): tarea for tarea in tareas}
         
         completados = 0
         for futuro in concurrent.futures.as_completed(futuros):
-            res = futuro.result()
-            if res is not None:
-                resultados_validos.append(res)
+            imagen, res_crudos, stats = futuro.result()
+            if res_crudos:
+                todas_ejecuciones.extend(res_crudos)
+            if stats:
+                resultados_agregados[imagen] = stats
             
             completados += 1
-            if completados % 50 == 0 or completados == len(tareas):
-                print(f"Progreso: {completados}/{len(tareas)} ejecuciones completadas...")
-                
-    todas_ejecuciones.extend(resultados_validos)
+            print(f"Progreso: {completados}/{len(tareas)} imágenes procesadas...")
 
-    # 4. Calcular e imprimir estadísticas
-    for img in imagenes:
-        res_img = [r for r in resultados_validos if r[0] == img]
-        if not res_img:
-            print(f"Sin resultados válidos para {img}")
-            continue
-            
-        datos = np.array(res_img)[:, 1:].astype(float)
-        promedios = np.mean(datos, axis=0)
-        desviaciones = np.std(datos, axis=0)
-        
-        print(f"Resultados para {img}:")
-        print(f"Centro X: {promedios[0]:.2f} ± {desviaciones[0]:.2f}")
-        print(f"Centro Y: {promedios[1]:.2f} ± {desviaciones[1]:.2f}")
-        print(f"Radio:    {promedios[2]:.2f} ± {desviaciones[2]:.2f}")
-        print("-" * 30)
-
-    # 5. Generar archivo de salida
+    # Generar archivo CSV con las 700 ejecuciones
     with open("resultados_crudos.csv", "w", newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["Imagen", "Centro_X", "Centro_Y", "Radio", "Fitness"])
         writer.writerows(todas_ejecuciones)
         
-    print("Pruebas finalizadas. Archivo 'resultados_crudos.csv' generado correctamente.")
+    print("\nArchivo 'resultados_crudos.csv' generado correctamente.\n")
+
+    # Imprimir tabla ASCII con las estadísticas
+    ancho_img = 10
+    print(f"+{'-'*(ancho_img+2)}+{'-'*14}+{'-'*13}+{'-'*14}+{'-'*13}+{'-'*10}+{'-'*10}+{'-'*12}+{'-'*11}+")
+    print(f"| {'Imagen':<{ancho_img}} | {'Centro X avg':<12} | {'Centro X sd':<11} | {'Centro Y avg':<12} | {'Centro Y sd':<11} | {'R avg':<8} | {'R sd':<8} | {'Fit avg':<10} | {'Fit sd':<9} |")
+    print(f"+{'-'*(ancho_img+2)}+{'-'*14}+{'-'*13}+{'-'*14}+{'-'*13}+{'-'*10}+{'-'*10}+{'-'*12}+{'-'*11}+")
+
+    for img in imagenes:
+        nombre_corto = img.split('/')[-1]
+        if img in resultados_agregados:
+            cx_avg, cx_sd, cy_avg, cy_sd, r_avg, r_sd, fit_avg, fit_sd = resultados_agregados[img]
+            print(f"| {nombre_corto:<{ancho_img}} | {cx_avg:>12.2f} | {cx_sd:>11.2f} | {cy_avg:>12.2f} | {cy_sd:>11.2f} | {r_avg:>8.2f} | {r_sd:>8.2f} | {fit_avg:>10.0f} | {fit_sd:>9.2f} |")
+        else:
+            print(f"| {nombre_corto:<{ancho_img}} | {'Sin datos suficientes calculados':<101} |")
+            
+    print(f"+{'-'*(ancho_img+2)}+{'-'*14}+{'-'*13}+{'-'*14}+{'-'*13}+{'-'*10}+{'-'*10}+{'-'*12}+{'-'*11}+")
 
 if __name__ == "__main__":
     lista_imagenes = [
         "imgs/C01.bmp", "imgs/C02.bmp", "imgs/C03.bmp", 
         "imgs/C04.bmp", "imgs/C05.bmp", "imgs/auto.bmp", "imgs/lamp.bmp"
     ]
-    generar_reporte_paralelo(lista_imagenes, repeticiones=100)
+    generar_reporte_paralelo(lista_imagenes)

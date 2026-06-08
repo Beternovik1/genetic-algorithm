@@ -3,6 +3,7 @@
    usando un Algoritmo Genético Simple
    Integrante 1: Edgar
    Modificado para Integrante 2 (Automatización y Sintonización)
+   Modificado por integrante 3 (ejecucion y estadisticas)
    Basado en gcIMG del Dr. Carlos Hugo García Capulín
  */
 
@@ -214,22 +215,51 @@ int main(int argc, char *argv[])
 
     fprintf(stderr, "Poblacion: %u, Generaciones: %u, Cruza: %.2f, Mut: %.2f, Sel: %d, TipoCruza: %d\n", POB, GENS, PC, PM, metodo_seleccion, tipo_cruza);
 
-    GA ga(POB, NUM_GENES, nbits, ls, li, PC, PM);
-    ga.setTipoFuncion(5);
-    ga.setOptDir(MAX);
-    ga.setMetodoSeleccion(metodo_seleccion);
-    ga.setTournamentSize(2);
-    ga.setTipoCruza(tipo_cruza);
-    ga.setPixelNegros(px, py, total, img->imx, ancho, alto);
+    int iteraciones = 100;
+    float sum_cx = 0, sum_cy = 0, sum_r = 0, sum_fit = 0;
+    float sq_cx = 0, sq_cy = 0, sq_r = 0, sq_fit = 0;
 
-    ga.Evolucionar(GENS);
+    for(int e = 0; e < iteraciones; e++) {
+        GA ga(POB, NUM_GENES, nbits, ls, li, PC, PM);
+        ga.setTipoFuncion(5);
+        ga.setOptDir(MAX);
+        ga.setMetodoSeleccion(metodo_seleccion);
+        ga.setTournamentSize(2);
+        ga.setTipoCruza(tipo_cruza);
+        ga.setPixelNegros(px, py, total, img->imx, ancho, alto);
 
-    float cx, cy, r;
-    ga.GetBestCirculo(&cx, &cy, &r);
-    float fit = ga.GetBestObj();
+        ga.Evolucionar(GENS);
 
-    // Salida estandar limpia formato CSV para el script de Python
-    printf("%.2f,%.2f,%.2f,%.0f\n", cx, cy, r, fit);
+        float cx, cy, r;
+        ga.GetBestCirculo(&cx, &cy, &r);
+        float fit = ga.GetBestObj();
+
+        // Salida individual para el archivo CSV
+        printf("%.2f,%.2f,%.2f,%.0f\n", cx, cy, r, fit);
+
+        // Acumulación para estadísticas
+        sum_cx += cx; sq_cx += cx * cx;
+        sum_cy += cy; sq_cy += cy * cy;
+        sum_r += r;   sq_r += r * r;
+        sum_fit += fit; sq_fit += fit * fit;
+    }
+
+    // promedios y desviaciones estandar poblacionales
+    float avg_cx = sum_cx / iteraciones;
+    float sd_cx = sqrt((sq_cx / iteraciones) - (avg_cx * avg_cx));
+    
+    float avg_cy = sum_cy / iteraciones;
+    float sd_cy = sqrt((sq_cy / iteraciones) - (avg_cy * avg_cy));
+    
+    float avg_r = sum_r / iteraciones;
+    float sd_r = sqrt((sq_r / iteraciones) - (avg_r * avg_r));
+    
+    float avg_fit = sum_fit / iteraciones;
+    float sd_fit = sqrt((sq_fit / iteraciones) - (avg_fit * avg_fit));
+
+    //línea identificadora de estadisticas para python
+    printf("STATS,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n", 
+            avg_cx, sd_cx, avg_cy, sd_cy, avg_r, sd_r, avg_fit, sd_fit);
 
     /* BLOQUE COMENTADO PARA EVITAR ESCRITURA EN DISCO EN AUTOMATIZACION
     for (int a = 0; a < 360; a++) {
