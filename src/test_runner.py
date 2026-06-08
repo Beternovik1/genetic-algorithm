@@ -7,7 +7,7 @@ import os
 def ejecutar_tarea(args):
     """Ejecuta una instancia única del algoritmo genético."""
     imagen, pob, gens, pc, pm, sel, cruza = args
-    comando = ["./ga_detector", imagen, str(pob), str(gens), str(pc), str(pm), str(sel), str(cruza)]
+    comando = ["../build/ga_detector.exe", imagen, str(pob), str(gens), str(pc), str(pm), str(sel), str(cruza)]
     
     proceso = subprocess.run(comando, capture_output=True, text=True)
     lineas = proceso.stdout.strip().split('\n')
@@ -55,7 +55,7 @@ def generar_reporte_paralelo(imagenes):
             print(f"Progreso: {completados}/{len(tareas)} imágenes procesadas...")
 
     # Generar archivo CSV con las 700 ejecuciones
-    with open("resultados_crudos.csv", "w", newline='') as f:
+    with open("../resultados/resultados_crudos.csv", "w", newline='') as f:
         writer = csv.writer(f)
         writer.writerow(["Imagen", "Centro_X", "Centro_Y", "Radio", "Fitness"])
         writer.writerows(todas_ejecuciones)
@@ -80,7 +80,7 @@ def generar_reporte_paralelo(imagenes):
 
 if __name__ == "__main__":
     lista_imagenes = [
-        "imgs/C01.bmp", "imgs/C02.bmp", "imgs/C03.bmp", 
-        "imgs/C04.bmp", "imgs/C05.bmp", "imgs/auto.bmp", "imgs/lamp.bmp"
+        "../imgs/C01.bmp", "../imgs/C02.bmp", "../imgs/C03.bmp", 
+        "../imgs/C04.bmp", "../imgs/C05.bmp", "../imgs/auto.bmp", "../imgs/lamp.bmp"
     ]
     generar_reporte_paralelo(lista_imagenes)

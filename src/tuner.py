@@ -15,7 +15,7 @@ def sintonizar_parametros(imagen="imgs/C01.bmp"):
     
     for combo in combinaciones:
         pob, pm, pc, gen, sel = combo
-        comando = ["./ga_detector", imagen, str(pob), str(gen), str(pc), str(pm), str(sel), "1"]
+        comando = ["../build/ga_detector.exe", imagen, str(pob), str(gen), str(pc), str(pm), str(sel), "1"]
         
         # Ejecutar 5 veces por configuración para obtener un promedio rápido (100 tomaría mucho tiempo en el tuning)
         fits = []
@@ -28,7 +28,7 @@ def sintonizar_parametros(imagen="imgs/C01.bmp"):
         resultados_tuning.append({"POB": pob, "PM": pm, "PC": pc, "GEN": gen, "SEL": sel, "Avg_Fit": avg_fit})
         
     df = pd.DataFrame(resultados_tuning)
-    df.to_csv("tabla_configuraciones.csv", index=False)
+    df.to_csv("../resultados/tabla_configuraciones.csv", index=False)
     
     mejor = df.loc[df['Avg_Fit'].idxmax()]
     print("La mejor configuración encontrada es:")
