@@ -436,32 +436,35 @@ void GA::setPixelNegros(int *x, int *y, int count,
 
 int GA::funcion_objetivo_circulo(int cx, int cy, int r)
 {
-    // Tabla estática precalculada para evitar cálculos trigonométricos redundantes
-    static float cos_lut[360];
-    static float sin_lut[360];
-    static bool lut_init = false;
-
-    if (!lut_init) {
-        for(int i = 0; i < 360; i++) {
-            float rad = (float)i * PI / 180.0f;
-            cos_lut[i] = cosf(rad);
-            sin_lut[i] = sinf(rad);
-        }
-        lut_init = true;
-    }
-
     int aciertos = 0;
+    int indices_unicos[360];
+    int n_unicos = 0;
+
     for (int angulo = 0; angulo < 360; angulo++) {
-        int px = (int)((float)cx + (float)r * cos_lut[angulo]);
-        int py = (int)((float)cy + (float)r * sin_lut[angulo]);
+        float rad = (float)angulo * PI / 180.0f;
+        int px = (int)((float)cx + (float)r * cosf(rad));
+        int py = (int)((float)cy + (float)r * sinf(rad));
 
         if (px >= 0 && px < ancho_img && py >= 0 && py < alto_img) {
-            if (imagen_plana[py * ancho_img + px] == 0.0f)
-                aciertos++;
+            int idx = py * ancho_img + px;
+            if (imagen_plana[idx] == 0.0f) {
+                int duplicado = 0;
+                for (int v = 0; v < n_unicos; v++) {
+                    if (indices_unicos[v] == idx) {
+                        duplicado = 1;
+                        break;
+                    }
+                }
+                if (!duplicado) {
+                    indices_unicos[n_unicos++] = idx;
+                    aciertos++;
+                }
+            }
         }
     }
     return aciertos;
 }
+
 void GA::GetBestCirculo(float *cx, float *cy, float *r) const {
     unsigned int idx = Id_BestObj;
     int i_idx = (int)POB[idx].Vre[0];
