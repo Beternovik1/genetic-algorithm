@@ -2,6 +2,7 @@
    Programa principal para detección de círculos en imágenes BMP
    usando un Algoritmo Genético Simple
    Integrante 1: Edgar
+   Modificado para Integrante 2 (Automatización y Sintonización)
    Basado en gcIMG del Dr. Carlos Hugo García Capulín
  */
 
@@ -11,16 +12,6 @@
 #include <math.h>
 #include <time.h>
 #include "sga.hpp"
-
-/* **************************************************************************
-   PROCESAMIENTO DIGITAL DE IMAGENES
-   Biblioteca Basica de Funciones
-   Autor: Dr. Carlos Hugo Garcia Capulin
-   Ver 1.2
-   Prohibido su uso, distribucion y copia sin autorizacion por parte de
-   DIVISION DE INGENIERIAS CAMPUS IRAPUATO-SALAMANCA
-   UNIVERSIDAD DE GUANAJUATO
-************************************************************************** */
 
 typedef unsigned char      BYTE;
 typedef unsigned short int word;
@@ -62,7 +53,7 @@ gcIMG* gcGetImgBmp(char *ruta)
     int tam_fila, padding;
 
     file = fopen(ruta, "rb");
-    if (!file) { printf("Error al abrir %s\n", ruta); return NULL; }
+    if (!file) { fprintf(stderr, "Error al abrir %s\n", ruta); return NULL; }
 
     img = (gcIMG*)calloc(1, sizeof(gcIMG));
     if (!img) { fclose(file); return NULL; }
@@ -80,7 +71,7 @@ gcIMG* gcGetImgBmp(char *ruta)
     fread(&img->size, 4, 1, file);
 
     if (img->id[0] != 'B' || img->id[1] != 'M') {
-        printf("Error: No es BMP\n");
+        fprintf(stderr, "Error: No es BMP\n");
         fclose(file); free(img); return NULL;
     }
 
@@ -148,7 +139,6 @@ void gcFreeImg(gcIMG *img)
     }
 }
 
-/* Calcula cuantos bits se necesitan para indexar N elementos */
 static int bits_necesarios(int n)
 {
     int bits = 0, t = n - 1;
@@ -163,15 +153,15 @@ int main(int argc, char *argv[])
     char nom_img[256] = "imgs/C01.bmp";
     if (argc > 1) strcpy(nom_img, argv[1]);
 
-    printf("Cargando: %s\n", nom_img);
+    // Redireccionar mensajes informativos a stderr
+    fprintf(stderr, "Cargando: %s\n", nom_img);
 
     gcIMG *img = gcGetImgBmp(nom_img);
-    if (!img) { printf("ERROR: No se pudo abrir %s\n", nom_img); return 1; }
+    if (!img) { fprintf(stderr, "ERROR: No se pudo abrir %s\n", nom_img); return 1; }
 
     int ancho = img->ancho, alto = img->alto;
-    printf("Dimensiones: %d x %d\n", ancho, alto);
+    fprintf(stderr, "Dimensiones: %d x %d\n", ancho, alto);
 
-    /* Contar pixeles negros (imx[i] == 0.0f) */
     int total = 0, i, j, k;
     for (i = 0; i < alto; i++)
         for (j = 0; j < ancho; j++)
@@ -179,13 +169,13 @@ int main(int argc, char *argv[])
                 total++;
 
     if (total < 3) {
-        printf("ERROR: Se requieren al menos 3 pixeles negros\n");
+        fprintf(stderr, "ERROR: Se requieren al menos 3 pixeles negros\n");
         return 1;
     }
 
     int *px = (int*)malloc(total * sizeof(int));
     int *py = (int*)malloc(total * sizeof(int));
-    if (!px || !py) { printf("Error de memoria\n"); return 1; }
+    if (!px || !py) { fprintf(stderr, "Error de memoria\n"); return 1; }
 
     k = 0;
     for (i = 0; i < alto; i++)
@@ -196,32 +186,40 @@ int main(int argc, char *argv[])
                 k++;
             }
 
-    printf("Pixeles negros: %d\n", total);
-    int n = total < 10 ? total : 10;
-    for (i = 0; i < n; i++)
-        printf("  pixel[%d]: (%d, %d)\n", i, px[i], py[i]);
+    fprintf(stderr, "Pixeles negros: %d\n", total);
 
-    /* Configurar AG */
     int bits = bits_necesarios(total);
-    printf("Bits por gen: %d\n", bits);
+    fprintf(stderr, "Bits por gen: %d\n", bits);
 
     const unsigned int NUM_GENES = 3;
     unsigned int nbits[3] = { (unsigned int)bits, (unsigned int)bits, (unsigned int)bits };
     float ls[3] = { (float)(total-1), (float)(total-1), (float)(total-1) };
     float li[3] = { 0.0f, 0.0f, 0.0f };
 
-    const unsigned int POB = 100;
-    const unsigned int GENS = 500;
-    const float PC = 0.90f, PM = 0.05f;
+    // Valores por defecto
+    unsigned int POB = 100;
+    unsigned int GENS = 500;
+    float PC = 0.90f;
+    float PM = 0.05f;
+    int metodo_seleccion = 2; // 1: Ruleta, 2: Torneo
+    int tipo_cruza = 1;
 
-    printf("Poblacion: %u, Generaciones: %u, Cruza: %.2f, Mut: %.2f\n", POB, GENS, PC, PM);
+    // Sobrescritura por linea de comandos
+    if (argc >= 3) POB = atoi(argv[2]);
+    if (argc >= 4) GENS = atoi(argv[3]);
+    if (argc >= 5) PC = atof(argv[4]);
+    if (argc >= 6) PM = atof(argv[5]);
+    if (argc >= 7) metodo_seleccion = atoi(argv[6]);
+    if (argc >= 8) tipo_cruza = atoi(argv[7]);
+
+    fprintf(stderr, "Poblacion: %u, Generaciones: %u, Cruza: %.2f, Mut: %.2f, Sel: %d, TipoCruza: %d\n", POB, GENS, PC, PM, metodo_seleccion, tipo_cruza);
 
     GA ga(POB, NUM_GENES, nbits, ls, li, PC, PM);
     ga.setTipoFuncion(5);
     ga.setOptDir(MAX);
-    ga.setMetodoSeleccion(2);
+    ga.setMetodoSeleccion(metodo_seleccion);
     ga.setTournamentSize(2);
-    ga.setTipoCruza(1);
+    ga.setTipoCruza(tipo_cruza);
     ga.setPixelNegros(px, py, total, img->imx, ancho, alto);
 
     ga.Evolucionar(GENS);
@@ -230,12 +228,10 @@ int main(int argc, char *argv[])
     ga.GetBestCirculo(&cx, &cy, &r);
     float fit = ga.GetBestObj();
 
-    printf("\n=== RESULTADO ===\n");
-    printf("Centro: (%.2f, %.2f)\n", cx, cy);
-    printf("Radio:  %.2f\n", r);
-    printf("Fitness: %.0f / 360 (%.1f%%)\n", fit, (fit / 360.0f) * 100.0f);
+    // Salida estandar limpia formato CSV para el script de Python
+    printf("%.2f,%.2f,%.2f,%.0f\n", cx, cy, r, fit);
 
-    /* Dibujar circulo detectado en la imagen */
+    /* BLOQUE COMENTADO PARA EVITAR ESCRITURA EN DISCO EN AUTOMATIZACION
     for (int a = 0; a < 360; a++) {
         float rad = (float)a * 3.14159265f / 180.0f;
         int x = (int)(cx + r * cosf(rad));
@@ -244,7 +240,6 @@ int main(int argc, char *argv[])
             img->imx[y * ancho + x] = 128.0f;
     }
 
-    /* Guardar resultado */
     system("mkdir -p outputs");
     char res_nom[512];
     char *solo_nombre = strrchr(nom_img, '/');
@@ -255,7 +250,8 @@ int main(int argc, char *argv[])
     if (p) strcpy(p, "_resultado.bmp");
     else   strcat(res_nom, "_resultado.bmp");
     gcPutImgBmp(res_nom, img);
-    printf("Guardado: %s\n", res_nom);
+    fprintf(stderr, "Guardado: %s\n", res_nom);
+    */
 
     gcFreeImg(img);
     free(px); free(py);
