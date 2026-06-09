@@ -100,31 +100,42 @@ gcIMG* gcGetImgBmp(char *ruta)
     return img;
 }
 
-void gcPutImgBmp(char *ruta, gcIMG *img)
+void gcPutImgBmp24(char *ruta, gcIMG *img, int *circ_x, int *circ_y, int n_circ)
 {
     FILE *file;
     int i, j, padding, tam_fila;
-    BYTE pal[1024];
 
     file = fopen(ruta, "wb");
     if (!file) return;
 
-    fwrite(img->head, 1, 54, file);
-    for (i = 0; i < 256; i++) {
-        pal[i*4+0] = pal[i*4+1] = pal[i*4+2] = (BYTE)i;
-        pal[i*4+3] = 0;
-    }
-    fwrite(pal, 1, 1024, file);
+    BYTE head[54];
+    memcpy(head, img->head, 54);
+    head[28] = 24;
+    *(int*)(head+10) = 54;
+    fwrite(head, 1, 54, file);
 
-    padding = (4 - (img->ancho % 4)) % 4;
-    tam_fila = img->ancho + padding;
+    padding = (4 - ((img->ancho * 3) % 4)) % 4;
+    tam_fila = img->ancho * 3 + padding;
 
     BYTE *fila = (BYTE*)malloc(tam_fila);
+    memset(fila, 0, tam_fila);
+
     for (i = img->alto - 1; i >= 0; i--) {
-        for (j = 0; j < img->ancho; j++)
-            fila[j] = (BYTE)img->imx[i * img->ancho + j];
-        for (j = img->ancho; j < tam_fila; j++)
-            fila[j] = 0;
+        for (j = 0; j < img->ancho; j++) {
+            BYTE val = (BYTE)img->imx[i * img->ancho + j];
+            int es_circulo = 0;
+            for (int c = 0; c < n_circ; c++)
+                if (circ_x[c] == j && circ_y[c] == i) { es_circulo = 1; break; }
+            if (es_circulo) {
+                fila[j*3+0] = 0;     // B
+                fila[j*3+1] = 0;     // G
+                fila[j*3+2] = 255;   // R
+            } else {
+                fila[j*3+0] = val;
+                fila[j*3+1] = val;
+                fila[j*3+2] = val;
+            }
+        }
         fwrite(fila, 1, tam_fila, file);
     }
     free(fila);
@@ -162,6 +173,22 @@ int main(int argc, char *argv[])
 
     int ancho = img->ancho, alto = img->alto;
     fprintf(stderr, "Dimensiones: %d x %d\n", ancho, alto);
+
+    float *original_img = (float*)malloc(ancho * alto * sizeof(float));
+    if (!original_img) { fprintf(stderr, "Error de memoria\n"); return 1; }
+    memcpy(original_img, img->imx, ancho * alto * sizeof(float));
+
+    float sobel_th = 30.0f;
+    for (int y = 0; y < alto; y++) {
+        for (int x = 0; x < ancho; x++) {
+            float gx = (x == 0 || x == ancho-1) ? 0.0f :
+                       original_img[y * ancho + x + 1] - original_img[y * ancho + x - 1];
+            float gy = (y == 0 || y == alto-1) ? 0.0f :
+                       original_img[(y-1) * ancho + x] - original_img[(y+1) * ancho + x];
+            img->imx[y * ancho + x] = (sqrtf(gx*gx + gy*gy) > sobel_th) ? 0.0f : 255.0f;
+        }
+    }
+    fprintf(stderr, "Bordes Sobel umbral=%.0f\n", sobel_th);
 
     int total = 0, i, j, k;
     for (i = 0; i < alto; i++)
@@ -215,9 +242,11 @@ int main(int argc, char *argv[])
 
     fprintf(stderr, "Poblacion: %u, Generaciones: %u, Cruza: %.2f, Mut: %.2f, Sel: %d, TipoCruza: %d\n", POB, GENS, PC, PM, metodo_seleccion, tipo_cruza);
 
-    int iteraciones = 100;
+    int iteraciones = (argc > 8) ? atoi(argv[8]) : 100;
     float sum_cx = 0, sum_cy = 0, sum_r = 0, sum_fit = 0;
     float sq_cx = 0, sq_cy = 0, sq_r = 0, sq_fit = 0;
+
+    float best_fit = -1.0f, best_cx = 0, best_cy = 0, best_r = 0;
 
     for(int e = 0; e < iteraciones; e++) {
         GA ga(POB, NUM_GENES, nbits, ls, li, PC, PM);
@@ -242,6 +271,14 @@ int main(int argc, char *argv[])
         sum_cy += cy; sq_cy += cy * cy;
         sum_r += r;   sq_r += r * r;
         sum_fit += fit; sq_fit += fit * fit;
+
+        // Guardar el mejor círculo (mayor fitness)
+        if (fit > best_fit) {
+            best_fit = fit;
+            best_cx = cx;
+            best_cy = cy;
+            best_r = r;
+        }
     }
 
     // promedios y desviaciones estandar poblacionales
@@ -261,13 +298,23 @@ int main(int argc, char *argv[])
     printf("STATS,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n", 
             avg_cx, sd_cx, avg_cy, sd_cy, avg_r, sd_r, avg_fit, sd_fit);
 
-    /* BLOQUE COMENTADO PARA EVITAR ESCRITURA EN DISCO EN AUTOMATIZACION
-    for (int a = 0; a < 360; a++) {
-        float rad = (float)a * 3.14159265f / 180.0f;
-        int x = (int)(cx + r * cosf(rad));
-        int y = (int)(cy + r * sinf(rad));
-        if (x >= 0 && x < ancho && y >= 0 && y < alto)
-            img->imx[y * ancho + x] = 128.0f;
+    // Restaurar imagen original y dibujar el mejor círculo en rojo
+    memcpy(img->imx, original_img, ancho * alto * sizeof(float));
+
+    int circ_x[1080], circ_y[1080], n_circ = 0;
+    if (best_fit > 80) {
+        for (int a = 0; a < 360; a++) {
+            float rad = (float)a * 3.14159265f / 180.0f;
+            for (int d = -1; d <= 1; d++) {
+                float rd = (float)(int)(best_r + d);
+                if (rd < 1.0f) continue;
+                int x = (int)(best_cx + rd * cosf(rad));
+                int y = (int)(best_cy + rd * sinf(rad));
+                if (x >= 0 && x < ancho && y >= 0 && y < alto) {
+                    if (n_circ < 1080) { circ_x[n_circ] = x; circ_y[n_circ] = y; n_circ++; }
+                }
+            }
+        }
     }
 
     system("mkdir -p outputs");
@@ -279,10 +326,10 @@ int main(int argc, char *argv[])
     char *p = strrchr(res_nom, '.');
     if (p) strcpy(p, "_resultado.bmp");
     else   strcat(res_nom, "_resultado.bmp");
-    gcPutImgBmp(res_nom, img);
+    gcPutImgBmp24(res_nom, img, circ_x, circ_y, n_circ);
     fprintf(stderr, "Guardado: %s\n", res_nom);
-    */
 
+    free(original_img);
     gcFreeImg(img);
     free(px); free(py);
     return 0;
